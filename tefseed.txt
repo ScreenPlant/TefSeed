@@ -1,0 +1,282 @@
+	void CAberDIPView::OnExperimentsTeffSeeds()
+	{
+		// TODO: Add your command handler code here
+		CString  fPath; 
+		namedWindow( "Processed Image", 0 );// Create a window for display.
+
+		FILE *fp;	
+		char *fname="D:\\teffseeds.txt";	
+
+		BROWSEINFO bi; 
+		ZeroMemory(&bi, sizeof(bi)); 
+		TCHAR szDisplayName[MAX_PATH]; 
+		szDisplayName[0] = ' '; 
+		bi.hwndOwner = NULL; 
+		bi.pidlRoot = NULL; 
+		bi.pszDisplayName = szDisplayName; 
+		bi.lpszTitle = _T("Please select a folder to store the converted files:"); 
+		bi.ulFlags = BIF_RETURNONLYFSDIRS; 
+		bi.lParam = NULL; bi.iImage = 0; 
+		LPITEMIDLIST pidl = SHBrowseForFolder(&bi); 
+		TCHAR szPathName[MAX_PATH]; 
+
+		if (NULL != pidl) 
+		{ 
+			BOOL bRet = SHGetPathFromIDList(pidl,szPathName); 
+			if(bRet)
+			{   
+				fPath.Format(_T("%s"),szPathName);
+			}
+
+			Mat img;
+
+			CString filter;
+			filter = "(*.*)|*.*||";
+
+			CFileDialog dlg(TRUE, NULL, NULL, OFN_HIDEREADONLY|OFN_ALLOWMULTISELECT, filter); 
+			// Create buffer for file names.
+			const DWORD numberOfFileNames = 10000;	
+			const DWORD fileNameMaxLength = MAX_PATH + 1;
+			const DWORD bufferSize = (numberOfFileNames * fileNameMaxLength) + 1;
+			TCHAR* filenamesBuffer = new TCHAR[bufferSize];
+
+			// Initialize beginning and end of buffer.
+			filenamesBuffer[0] = NULL;
+			filenamesBuffer[bufferSize-1] = NULL;
+
+			// Attach buffer to OPENFILENAME member.
+			dlg.m_ofn.lpstrFile = filenamesBuffer;
+			dlg.m_ofn.nMaxFile = bufferSize;
+
+			// Create array for file names.
+			CString fileNameArray[numberOfFileNames];
+			if(dlg.DoModal() == IDOK)
+			{
+				// Retrieve file name(s).
+				POSITION fileNamesPosition = dlg.GetStartPosition();
+				int iCtr = 0;
+				while(fileNamesPosition != NULL)
+				{
+					fileNameArray[iCtr] = dlg.GetNextPathName(fileNamesPosition);
+
+					CString filename;
+					CString currentfile=fileNameArray[iCtr];
+
+					CFileStatus status;
+					CString str;
+					if(CFile::GetStatus( currentfile, status ))
+					{
+						CString mTime;
+						mTime = status.m_mtime.Format("%d %m %Y");
+						str = mTime;
+					}
+
+					int index=currentfile.ReverseFind(_T('\\'));
+					currentfile.Delete(0, index+1);
+
+					string s;
+
+					s=CW2A( fileNameArray[iCtr].GetString() ) ;
+					img = imread(s);//read in image
+
+					fp=fopen(fname, "a");/
+
+
+					string s1;
+					s1=s.substr(s.rfind("\\")+1, s.rfind(".")-s.rfind("\\")-1);
+
+
+					if(img.data)
+					{
+						Mat image=img.clone();
+
+						vector<int> compression_params;
+						compression_params.push_back(CV_IMWRITE_PNG_COMPRESSION);
+						compression_params.push_back(0);
+
+						Mat img0=img.clone();
+						Mat img1=img.clone();
+
+						Mat ttt;
+						cvtColor(img0, ttt, CV_BGR2HSV);
+
+						Mat* sp=new Mat[3];
+					                 split(ttt, sp);
+
+						Mat aa=sp[0];
+						Mat bb=sp[1];
+						Mat cc=sp[2];
+
+						TermCriteria termcrit=TermCriteria(TermCriteria::MAX_ITER+TermCriteria::EPS,5,1);
+
+						Mat tn;
+
+						Rect rect;
+
+
+						Mat h;
+						cvtColor(img, h, CV_BGR2Lab);
+							
+
+						Mat* pImg=new Mat[3];
+						pImg=DeconvolutionMat(img, 8);
+
+							Rect rectB;
+							rectB.x = 0;
+							rectB.y = 0;
+							rectB.width = img0.cols;
+							rectB.height = rect.y+520;//calculate from the pot bottom
+
+
+							
+							tn=pImg[0];
+
+							cvtColor(tn, tn, CV_BGR2GRAY);
+
+							threshold(tn, tn, 200, 255, CV_THRESH_BINARY);
+							tn=OnMorphology(tn, 3, 3, 1, 1, 0);
+
+							
+
+							Mat out;
+							out=tn;//remove blurry edge pixels
+
+							
+
+							int idx = 0;
+							vector<vector<Point> > contours;
+						    	vector<Vec4i> hierarchy;
+						   	 vector<Point> BD;
+
+							
+							//find every plant and do the colour analyisis
+
+							int position=0;
+
+							rect.x=position;
+							rect.y=0;
+							rect.height=image.rows;
+							rect.width=image.cols-position-10;
+
+							
+							Mat tmpout;
+							tmpout=out.clone();
+
+							Mat roi(tmpout, rect);
+
+							contours.clear();
+							hierarchy.clear();
+							
+							findContours( roi, contours, hierarchy, CV_RETR_CCOMP , CV_CHAIN_APPROX_SIMPLE, Point(0, 0) );
+							
+							double leafAreaL=0;
+							double pixelcount=0;
+
+							idx = 0;
+
+							int sn=0;
+
+							if(hierarchy.size()>0)
+							{
+								for( ; idx >= 0; idx = hierarchy[idx][0] )
+								{
+									BD.clear();
+									int area=0;
+									area=contourArea(contours[idx], false);
+									if(area>4000)
+									{
+										sn=sn+1;
+
+										fprintf(fp, "%s, %d, %d, ", s1, sn, area);
+
+										Mat drawing = Mat::zeros( image.size(), CV_8UC3 );
+										Mat roi1(drawing, rect);
+
+										Scalar color( 200, 200, 0 );
+										drawContours( roi1, contours, idx, color, CV_FILLED, 8, hierarchy );
+										
+										pixelcount=pixelcount+area;
+
+										for(int j=0; j<contours[idx].size(); j++)
+										{
+											BD.push_back(Point(contours[idx][j].x+rect.x, contours[idx][j].y));//？
+										}
+
+										Rect rectL=boundingRect(BD);
+
+										char s[200];
+										sprintf_s(s, 200, "%d", sn );
+										putText(image, s, Point(rectL.x, rectL.y), 0, 2, Scalar(255,255,0), 4, 8,false);
+										
+
+										
+										vector<vector<Point> >hull(contours.size());
+										convexHull( Mat(BD), hull[0], false ); 
+										
+
+										int harea=0;
+										harea=contourArea(hull[0], false);
+
+										fprintf(fp, "%d, ", harea);
+
+										
+
+										//find the minimum enclosing rectangle to calculate the size of the seed
+										RotatedRect fruit = minAreaRect( Mat(BD) );//find whole fruit
+										Point2f rect_points1[4]; fruit.points( rect_points1 );
+										for( int j = 0; j < 4; j++ )
+											line( image, rect_points1[j], rect_points1[(j+1)%4], Scalar(0, 0, 255), 4, 8 );
+										
+
+										int swidth, sheight;
+
+										swidth=fruit.size.width;
+										sheight=fruit.size.height;
+
+										if(sheight>swidth)//long side is the width
+										{
+											swidth=fruit.size.height;
+											sheight=fruit.size.width;
+										}
+
+										fprintf(fp, "%d, %d, ", swidth, sheight);
+										//colour analysis
+										image=ColourDistributionHSV(drawing, img0, image, rectL.x+rectL.width,rectL.y+rectL.height, fp);
+
+										rectangle(image, Point(rectL.x, rectL.y), Point(rectL.x+rectL.width, rectL.y+rectL.height), Scalar(255,0,255), 2, 8, 0);
+
+										drawContours(image, hull, 0, Scalar(255,255,0), 4, 8, vector<Vec4i>(), 0, Point() );
+
+										fprintf(fp, "\n");
+
+										
+										
+									}
+								}
+
+							}
+
+							
+
+							string ss;
+							filename.Format(_T("%s\\%s_processed.jpg"),fPath,currentfile);
+							ss=CW2A( filename.GetString() ) ;
+
+
+							imwrite(ss, image);
+
+							imshow( "Processed Image", image); // Show our image inside it.
+
+
+					}
+
+					fclose(fp);
+
+					iCtr++;
+				}  
+			}
+			//Release file names buffer.
+			delete[] filenamesBuffer;
+			MessageBox(_T("Processing is finished."));
+		}
+	}
